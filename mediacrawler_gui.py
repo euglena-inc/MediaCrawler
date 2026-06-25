@@ -214,6 +214,16 @@ DATA_DIR = REPO_ROOT / "data"
 MAX_LOG_LINES = 4000  # cap the in-memory log ring buffer to bound memory.
 
 
+def _flog(msg: str) -> None:
+    """事后调试用：把带时间戳的行追加到 data/gui.log（即使日志面板没显示也能查）。"""
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        with open(DATA_DIR / "gui.log", "a", encoding="utf-8") as _f:
+            _f.write(f"{time.strftime('%H:%M:%S')} {msg}\n")
+    except Exception:
+        pass
+
+
 # Platform / login / crawler / save-option enums mirror cmd_arg/arg.py exactly
 # (kept as plain data here — we deliberately do NOT import the crawler package).
 PLATFORMS = [
@@ -1156,6 +1166,7 @@ async def main(page: ft.Page) -> None:
                 if not line:
                     continue
                 _append_log_line(parse_log_level(line), line)
+                _flog("out: " + line)
                 # Throttle UI updates: batch a few lines per paint.
                 now = time.time()
                 if now - state.last_log_render > 0.06:  # ~16fps cap
@@ -1174,9 +1185,11 @@ async def main(page: ft.Page) -> None:
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # pragma: no cover - defensive
+            _flog("reader EXCEPTION: " + str(exc))
             _append_log_line("error", f"Log reader error: {exc}")
         finally:
             rc = proc.returncode
+            _flog("reader done rc=%s final_status=%s" % (rc, state.status))
             if rc == 0:
                 _append_log_line("success", "Crawler completed successfully · 采集完成")
                 set_status("idle")
@@ -1227,6 +1240,8 @@ async def main(page: ft.Page) -> None:
         state.log_lines.clear()
 
         cmd = build_command(cfg, REPO_ROOT)
+        _flog("start_crawl type=%s kw=%r headless=%s" % (cfg.crawler_type, cfg.keywords, cfg.headless))
+        _flog("cmd: " + " ".join(cmd))
         _append_log_line("info", "$ " + " ".join(cmd))
         _append_log_line(
             "info",
@@ -1268,6 +1283,7 @@ async def main(page: ft.Page) -> None:
                 start_new_session=True,  # 独立进程组：stop 时 killpg 能连 Chrome 一起杀
             )
         except FileNotFoundError as exc:
+            _flog("Popen FileNotFoundError: " + str(exc))
             _append_log_line(
                 "error",
                 f"Failed to launch subprocess (is `uv` on PATH?): {exc}",
@@ -1279,6 +1295,8 @@ async def main(page: ft.Page) -> None:
                 pass
             return
         except Exception as exc:
+            import traceback as _tb
+            _flog("Popen EXCEPTION: " + str(exc) + "\n" + _tb.format_exc())
             _append_log_line("error", f"Failed to start crawler: {exc}")
             set_status("error")
             try:
@@ -1288,10 +1306,15 @@ async def main(page: ft.Page) -> None:
             return
 
         state.proc = proc
+        try:
+            _flog("launched pid=%s pgid=%s" % (proc.pid, os.getpgid(proc.pid)))
+        except Exception as _e:  # noqa
+            _flog("launched pid=%s (%s)" % (proc.pid, _e))
         state.reader_task = asyncio.create_task(_read_output(proc))
 
     async def stop_crawl() -> None:
         proc = state.proc
+        _flog("stop_crawl: proc=%s poll=%s" % (proc, (proc.poll() if proc else None)))
         if proc is None or proc.poll() is not None:
             return
         set_status("stopping")
