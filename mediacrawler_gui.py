@@ -845,7 +845,7 @@ async def main(page: ft.Page) -> None:
             spacing=8,
         ),
         bgcolor=C.MOSS_500,
-        color=C.MOSS_500,
+        color=C.CREAM_50,
         elevation=0,
         on_click=lambda e: asyncio.ensure_future(start_crawl()),
     )
@@ -885,6 +885,11 @@ async def main(page: ft.Page) -> None:
         sub_comments_switch_ctl.controls[0],
     ]
 
+    # QR 登录码图片面板：爬虫跑起来后，watcher 把 data/login_qrcode.png 刷进来。
+    qr_image = ft.Image(
+        width=220, height=220, visible=False, fit=ft.ImageFit.CONTAIN, border_radius=R_SM
+    )
+
     control_panel = _section_card(
         Row(
             [
@@ -923,6 +928,7 @@ async def main(page: ft.Page) -> None:
         ),
         notice,
         Row([start_btn, stop_btn], spacing=12, alignment=MainAxisAlignment.START),
+        qr_image,
     )
 
     # =====================================================================
@@ -1394,6 +1400,30 @@ async def main(page: ft.Page) -> None:
         page.update()
     except Exception:
         pass
+
+    # QR watcher：爬取期间每 1.5s 检查 data/login_qrcode.png，有新文件就以 base64
+    # 刷新显示（base64 避免本地文件被缓存、保证每次扫码都能看到最新二维码）。
+    async def _qr_watcher() -> None:
+        import base64 as _b64
+        last_mtime = 0.0
+        qr_path = DATA_DIR / "login_qrcode.png"
+        while True:
+            try:
+                if state.running and qr_path.exists():
+                    mtime = qr_path.stat().st_mtime
+                    if mtime != last_mtime:
+                        last_mtime = mtime
+                        qr_image.src_base64 = _b64.b64encode(qr_path.read_bytes()).decode()
+                        qr_image.visible = True
+                        page.update()
+                elif not state.running and qr_image.visible:
+                    qr_image.visible = False
+                    page.update()
+            except Exception:
+                pass
+            await asyncio.sleep(1.5)
+
+    page.run_task(_qr_watcher)
 
 
 # =============================================================================

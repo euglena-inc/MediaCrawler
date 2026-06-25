@@ -150,10 +150,11 @@ def show_qrcode(qr_code) -> None:  # type: ignore
     qr_code = base64.b64decode(qr_code)
     image = Image.open(BytesIO(qr_code))
 
-    # 保存 PNG（落 /app/data，API 的 /api/data/files 可 serve，且在 PVC 上持久）
+    # 保存 PNG 到 cwd 下的 data/（爬虫 cwd = 仓库根 / payload/crawler），桌面 GUI
+    # 和 WebUI 都能从这里读到 login_qrcode.png 并显示；/app/data 仅容器里有。
     try:
-        os.makedirs("/app/data", exist_ok=True)
-        image.save("/app/data/login_qrcode.png")
+        os.makedirs("data", exist_ok=True)
+        image.save("data/login_qrcode.png")
     except Exception as e:  # noqa
         print(f"[QR] save qrcode png failed: {e}", flush=True)
 
