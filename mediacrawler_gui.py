@@ -887,7 +887,7 @@ async def main(page: ft.Page) -> None:
 
     # QR 登录码图片面板：爬虫跑起来后，watcher 把 data/login_qrcode.png 刷进来。
     qr_image = ft.Image(
-        width=220, height=220, visible=False, fit=ft.BoxFit.CONTAIN, border_radius=R_SM
+        src="", width=220, height=220, visible=False, fit=ft.BoxFit.CONTAIN, border_radius=R_SM
     )
 
     control_panel = _section_card(
