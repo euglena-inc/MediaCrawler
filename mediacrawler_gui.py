@@ -632,6 +632,13 @@ async def main(page: ft.Page) -> None:
     cfg = CrawlConfig()
 
     # --- State mutators that refresh the UI ---
+    def safe_update(reason: str = "") -> None:
+        """page.update()，但把失败记到 gui.log（之前 try/except 静默吞掉了，导致面板不刷新却无日志）。"""
+        try:
+            page.update()
+        except Exception as _e:  # noqa
+            _flog("page.update FAIL (%s): %s" % (reason, _e))
+
     def set_status(new_status: str) -> None:
         state.status = new_status
         status_chip.content = _status_chip(state).content
@@ -643,10 +650,7 @@ async def main(page: ft.Page) -> None:
             if new_status == "idle":
                 state.started_at = None
         sync_button_states()
-        try:
-            page.update()
-        except Exception:
-            pass
+        safe_update("set_status:" + new_status)
 
     def sync_button_states() -> None:
         running = state.status == "running"
@@ -1171,10 +1175,7 @@ async def main(page: ft.Page) -> None:
                 now = time.time()
                 if now - state.last_log_render > 0.06:  # ~16fps cap
                     state.last_log_render = now
-                    try:
-                        page.update()
-                    except Exception:
-                        pass
+                    safe_update("read:throttle")
             # Drain any remaining buffered output.
             remaining = await loop.run_in_executor(None, proc.stdout.read)
             if remaining:
@@ -1199,10 +1200,7 @@ async def main(page: ft.Page) -> None:
             else:
                 _append_log_line("error", f"Crawler exited with code {rc}")
                 set_status("error")
-            try:
-                page.update()
-            except Exception:
-                pass
+            safe_update("read:finally")
             # Auto-refresh the data panel when a crawl finishes.
             refresh_data()
 
