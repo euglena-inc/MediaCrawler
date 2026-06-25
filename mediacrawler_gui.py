@@ -1465,6 +1465,19 @@ async def main(page: ft.Page) -> None:
 
     page.run_task(_qr_watcher)
 
+    # 数据面板自动刷新：爬取期间每 4s 扫一次 data/，让采集结果边采边显示。
+    # （之前只在爬完才 refresh_data，而爬完时 session 可能已销毁 -> 数据面板空。）
+    async def _data_refresher() -> None:
+        while True:
+            try:
+                if getattr(state, "running", False):
+                    refresh_data()
+            except Exception as _e:  # noqa
+                _flog("data_refresher exc: %s" % _e)
+            await asyncio.sleep(4)
+
+    page.run_task(_data_refresher)
+
 
 # =============================================================================
 # ENTRY POINT — guarded so importing the module never opens a window.
