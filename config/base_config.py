@@ -99,7 +99,7 @@ USER_DATA_DIR = "%s_user_data_dir"  # %s will be replaced by platform name
 START_PAGE = 1
 
 # Control the number of crawled videos/posts
-CRAWLER_MAX_NOTES_COUNT = 15
+CRAWLER_MAX_NOTES_COUNT = 5
 
 # Controlling the number of concurrent crawlers
 MAX_CONCURRENCY_NUM = 1
@@ -108,7 +108,8 @@ MAX_CONCURRENCY_NUM = 1
 ENABLE_GET_MEIDAS = False
 
 # Whether to enable comment crawling mode. Comment crawling is enabled by default.
-ENABLE_GET_COMMENTS = True
+# 注意：评论抓取请求量大、易触发风控导致登录过期，默认关闭。
+ENABLE_GET_COMMENTS = False
 
 # Control the number of crawled first-level comments (single video/post)
 CRAWLER_MAX_COMMENTS_COUNT_SINGLENOTES = 10
@@ -133,8 +134,8 @@ STOP_WORDS_FILE = "./docs/hit_stopwords.txt"
 # Chinese font file path
 FONT_PATH = "./docs/STZHONGS.TTF"
 
-# Crawl interval
-CRAWLER_MAX_SLEEP_SEC = 2
+# Crawl interval（随机区间下限，实际会随机到 2 倍，降低风控判定）
+CRAWLER_MAX_SLEEP_SEC = 3
 
 # 是否禁用 SSL 证书验证。仅在使用企业代理、Burp Suite、mitmproxy 等会注入自签名证书的中间人代理时设为 True。
 # 警告：禁用 SSL 验证将使所有流量暴露于中间人攻击风险，请勿在生产环境中开启。

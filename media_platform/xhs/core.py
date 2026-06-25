@@ -207,8 +207,8 @@ class XiaoHongShuCrawler(AbstractCrawler):
                 utils.logger.error(f"[XiaoHongShuCrawler.get_creators_and_notes] Failed to parse creator URL: {e}")
                 continue
 
-            # Use fixed crawling interval
-            crawl_interval = config.CRAWLER_MAX_SLEEP_SEC
+            # 随机化请求间隔（固定间隔容易被风控判定为机器人）
+            crawl_interval = round(random.uniform(config.CRAWLER_MAX_SLEEP_SEC, config.CRAWLER_MAX_SLEEP_SEC * 2), 1)
             # Get all note information of the creator
             all_notes_list = await self.xhs_client.get_all_notes_by_creator(
                 user_id=user_id,
@@ -343,8 +343,8 @@ class XiaoHongShuCrawler(AbstractCrawler):
         """Get note comments with keyword filtering and quantity limitation"""
         async with semaphore:
             utils.logger.info(f"[XiaoHongShuCrawler.get_comments] Begin get note id comments {note_id}")
-            # Use fixed crawling interval
-            crawl_interval = config.CRAWLER_MAX_SLEEP_SEC
+            # 随机化请求间隔（固定间隔容易被风控判定为机器人）
+            crawl_interval = round(random.uniform(config.CRAWLER_MAX_SLEEP_SEC, config.CRAWLER_MAX_SLEEP_SEC * 2), 1)
             await self.xhs_client.get_note_all_comments(
                 note_id=note_id,
                 xsec_token=xsec_token,
