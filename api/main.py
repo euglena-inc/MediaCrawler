@@ -29,7 +29,7 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from .routers import crawler_router, data_router, websocket_router
 
@@ -79,6 +79,20 @@ async def serve_frontend():
 @app.get("/api/health")
 async def health_check():
     return {"status": "ok"}
+
+
+@app.get("/api/qrcode")
+async def get_login_qrcode():
+    """返回最近一次抓到的小红书登录二维码 PNG，方便浏览器直接打开扫码。
+
+    headless/API 部署里终端 ASCII 可能不好扫，这个端点直接以 image/png 返回原图。
+    图片由 crawler 子进程在 login_by_qrcode 时写入 /app/data/login_qrcode.png。
+    """
+    qr_path = "/app/data/login_qrcode.png"
+    if not os.path.exists(qr_path):
+        return Response(status_code=404, content="no qrcode yet", media_type="text/plain")
+    with open(qr_path, "rb") as f:
+        return Response(content=f.read(), media_type="image/png")
 
 
 @app.get("/api/env/check")

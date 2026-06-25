@@ -26,6 +26,8 @@ dependencies = [
     "pyexecjs==1.5.1",
     "pyhumps>=3.8.0",
     "python-dotenv==1.0.1",
+    "pyzbar==0.1.9",
+    "qrcode[pil]==7.4.2",
     "redis~=4.6.0",
     "requests==2.32.3",
     "sqlalchemy>=2.0.43",

@@ -85,21 +85,111 @@ async def find_qrcode_img_from_canvas(page: Page, canvas_selector: str) -> str:
     return base64_image
 
 
+def _qrcode_to_ascii(image) -> str:
+    """把二维码 PIL 图像渲染成可扫描的 ASCII（██/空格）。
+
+    用左上角定位符（finder pattern，固定 7 个模块宽）精确定位模块尺寸和 QR 原点，
+    再从原点按模块步进对齐采样，保证输出忠实于原二维码、手机可扫。
+    """
+    img = image.convert("L")
+    w, h = img.size
+    px = img.load()
+
+    def is_dark(x, y):
+        return px[x, y] < 128
+
+    # 最上方含暗点的行 = QR 顶部（跳过周围静默区）
+    top = 0
+    found_top = False
+    for y in range(h):
+        if any(is_dark(x, y) for x in range(w)):
+            top = y
+            found_top = True
+            break
+    if not found_top:
+        return "[QR] empty qrcode image"
+
+    # top 行里第一段连续暗点 = 左上定位符的顶边，正好 7 个模块宽
+    left = 0
+    for x in range(w):
+        if is_dark(x, top):
+            left = x
+            break
+    finder_top_pixels = 0
+    x = left
+    while x < w and is_dark(x, top):
+        finder_top_pixels += 1
+        x += 1
+    module_size = max(1, round(finder_top_pixels / 7))
+
+    # 从 QR 原点 (left, top) 按 module_size 对齐采样；██ = 暗，两个空格 = 亮（约成正方形模块）
+    lines = []
+    y = top
+    while y < h:
+        row = []
+        x = left
+        while x < w:
+            row.append("██" if is_dark(x, y) else "  ")
+            x += module_size
+        lines.append("".join(row))
+        y += module_size
+    return "\n".join(lines)
+
+
 def show_qrcode(qr_code) -> None:  # type: ignore
-    """parse base64 encode qrcode image and show it"""
+    """parse base64 encode qrcode image and show it.
+
+    headless/API 部署里没有 GUI 图片查看器，PIL Image.show() 不生效。
+    改为：保存 PNG（供 API/浏览器取用）+ 把 ASCII 二维码打印到 stdout
+    （被日志流/WebUI/kubectl logs 捕获），手机可直接扫描。
+    """
+    import os
+
     if "," in qr_code:
         qr_code = qr_code.split(",")[1]
     qr_code = base64.b64decode(qr_code)
     image = Image.open(BytesIO(qr_code))
 
-    # Add a square border around the QR code and display it within the border to improve scanning accuracy.
-    width, height = image.size
-    new_image = Image.new('RGB', (width + 20, height + 20), color=(255, 255, 255))
-    new_image.paste(image, (10, 10))
-    draw = ImageDraw.Draw(new_image)
-    draw.rectangle((0, 0, width + 19, height + 19), outline=(0, 0, 0), width=1)
-    del ImageShow.UnixViewer.options["save_all"]
-    new_image.show()
+    # 保存 PNG（落 /app/data，API 的 /api/data/files 可 serve，且在 PVC 上持久）
+    try:
+        os.makedirs("/app/data", exist_ok=True)
+        image.save("/app/data/login_qrcode.png")
+    except Exception as e:  # noqa
+        print(f"[QR] save qrcode png failed: {e}", flush=True)
+
+    # 打印 ASCII 二维码到控制台。
+    # 优先：pyzbar 解码出二维码内容，再用 qrcode 库重渲染成精确模块网格（最稳，手机可扫）。
+    # 退回：直接对原图按定位符采样（best-effort）。
+    ascii_qr = ""
+    try:
+        from io import StringIO
+        import qrcode
+        from pyzbar.pyzbar import decode as _zbar_decode
+
+        decoded = _zbar_decode(image)
+        if decoded:
+            qr = qrcode.QRCode(
+                border=2,
+                box_size=1,
+                error_correction=qrcode.constants.ERROR_CORRECT_M,
+            )
+            qr.add_data(decoded[0].data)
+            qr.make(fit=True)
+            buf = StringIO()
+            qr.print_ascii(out=buf, invert=True)
+            ascii_qr = buf.getvalue().rstrip()
+    except Exception as e:  # noqa
+        print(f"[QR] decode+rerender 不可用，退回图像渲染: {e}", flush=True)
+
+    if not ascii_qr:
+        ascii_qr = _qrcode_to_ascii(image)
+
+    border = "=" * 48
+    print("\n" + border, flush=True)
+    print("[QR] 请用小红书 App 扫描下方二维码登录（约 120s 内有效）", flush=True)
+    print("[QR] 扫不了时，浏览器直接打开原图: http://<节点IP>:30101/api/qrcode", flush=True)
+    print(ascii_qr, flush=True)
+    print(border, flush=True)
 
 
 def get_user_agent() -> str:
