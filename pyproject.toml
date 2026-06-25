@@ -42,6 +42,11 @@ dependencies = [
     "websockets>=15.0.1",
     "asyncpg>=0.31.0",
     "xhshow>=0.1.9",
+    # Desktop GUI entry point (mediacrawler_gui.py) — a thin subprocess wrapper
+    # over main.py. It never imports the crawler package, so it adds zero
+    # coupling. Install/runtime only; not required by main.py, the FastAPI api/,
+    # the Dockerfile or the GitHub Action.
+    "flet>=0.27.0",
 ]
 
 [[tool.uv.index]]
