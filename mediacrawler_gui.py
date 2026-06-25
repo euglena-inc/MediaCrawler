@@ -1171,6 +1171,7 @@ async def main(page: ft.Page) -> None:
                     continue
                 _append_log_line(parse_log_level(line), line)
                 _flog("out: " + line)
+                print(line, flush=True)  # 同时打到终端（./run.sh 的窗口），Flet 面板不渲染时也能看
                 # Throttle UI updates: batch a few lines per paint.
                 now = time.time()
                 if now - state.last_log_render > 0.06:  # ~16fps cap
@@ -1191,6 +1192,7 @@ async def main(page: ft.Page) -> None:
         finally:
             rc = proc.returncode
             _flog("reader done rc=%s final_status=%s" % (rc, state.status))
+            print(">>> CRAWL DONE  rc=%s  (results in data/%s/)" % (rc, cfg.platform), flush=True)
             if rc == 0:
                 _append_log_line("success", "Crawler completed successfully · 采集完成")
                 set_status("idle")
@@ -1240,6 +1242,7 @@ async def main(page: ft.Page) -> None:
         cmd = build_command(cfg, REPO_ROOT)
         _flog("start_crawl type=%s kw=%r headless=%s" % (cfg.crawler_type, cfg.keywords, cfg.headless))
         _flog("cmd: " + " ".join(cmd))
+        print("\n>>> START  " + " ".join(cmd), flush=True)
         _append_log_line("info", "$ " + " ".join(cmd))
         _append_log_line(
             "info",
