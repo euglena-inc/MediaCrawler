@@ -658,7 +658,7 @@ async def main(page: ft.Page) -> None:
                             height=34,
                             bgcolor=C.MOSS_200,
                             border_radius=R_SM,
-                            alignment=alignment.center,
+                            alignment=ft.Alignment(0, 0),
                         ),
                         brand_wordmark,
                     ],
@@ -1023,7 +1023,7 @@ async def main(page: ft.Page) -> None:
                         height=32,
                         bgcolor=C.MOSS_200,
                         border_radius=R_SM,
-                        alignment=alignment.center,
+                        alignment=ft.Alignment(0, 0),
                     ),
                     ft.Column(
                         [
@@ -1079,7 +1079,7 @@ async def main(page: ft.Page) -> None:
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
                     padding=24,
-                    alignment=alignment.center,
+                    alignment=ft.Alignment(0, 0),
                 )
             )
         else:
@@ -1378,4 +1378,4 @@ if __name__ == "__main__":
     # flet.app dispatches an async target on its own event loop, so we pass the
     # coroutine directly (NOT a sync wrapper around asyncio.run, which would
     # conflict with flet's internal loop).
-    flet.app(target=main)
+    ft.app(target=main)
