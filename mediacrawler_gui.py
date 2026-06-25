@@ -330,6 +330,10 @@ class AppState:
     log_lines: list[tuple[str, str]] = field(default_factory=list)  # (level, text)
     last_log_render: float = 0.0
 
+    @property
+    def running(self) -> bool:
+        return self.status == "running"
+
 
 def status_label(status: str) -> tuple[str, str]:
     """(EN label, hex color) for the live status chip."""
@@ -393,6 +397,24 @@ def count_records(p: Path, ftype: str) -> Optional[int]:
     except Exception:
         return None
     return None
+
+
+def decode_process_output(raw: bytes | str) -> str:
+    """Decode crawler subprocess output without letting bad bytes kill the UI."""
+    if isinstance(raw, bytes):
+        return raw.decode("utf-8", errors="replace")
+    return raw
+
+
+def classify_crawl_completion(returncode: Optional[int], current_status: str) -> tuple[str, str, str]:
+    """Return (next_status, log_level, message) for a finished crawler process."""
+    if current_status == "stopping":
+        return "idle", "info", "Crawler stopped · 已停止"
+    if returncode == 0:
+        return "idle", "success", "Crawler completed successfully · 采集完成"
+    if returncode is None:
+        return "error", "error", "Crawler exit status unavailable · 未能获取采集进程退出码"
+    return "error", "error", f"Crawler exited with code {returncode}"
 
 
 def human_size(n: int) -> str:
@@ -655,8 +677,11 @@ async def main(page: ft.Page) -> None:
     def sync_button_states() -> None:
         running = state.status == "running"
         stopping = state.status == "stopping"
-        start_btn.disabled = running or stopping
-        stop_btn.disabled = not running
+        can_start = not running and not stopping
+        can_stop = running
+        start_btn.disabled = False
+        stop_btn.disabled = False
+        apply_button_visual_state(can_start, can_stop)
         # While running, lock the config controls so you can't mid-edit.
         for ctl in config_controls:
             ctl.disabled = running or stopping
@@ -722,14 +747,14 @@ async def main(page: ft.Page) -> None:
     # =====================================================================
     # CONTROL PANEL
     # =====================================================================
-    platform_dd = _dropdown(PLATFORMS, cfg.platform, width=240)
-    login_dd = _dropdown(LOGIN_TYPES, cfg.login_type, width=200)
-    crawler_dd = _dropdown(CRAWLER_TYPES, cfg.crawler_type, width=240)
-    save_dd = _dropdown_str(SAVE_OPTIONS, cfg.save_option, width=180)
+    platform_dd = _dropdown(PLATFORMS, cfg.platform, width=210)
+    login_dd = _dropdown(LOGIN_TYPES, cfg.login_type, width=210)
+    crawler_dd = _dropdown(CRAWLER_TYPES, cfg.crawler_type, width=210)
+    save_dd = _dropdown_str(SAVE_OPTIONS, cfg.save_option, width=210)
 
-    keywords_field = _text_field(cfg.keywords, width=520)
+    keywords_field = _text_field(cfg.keywords, width=430)
     notes_field = _text_field(str(cfg.notes_count), width=120)
-    cookies_field = _text_field(cfg.cookies, password=True, width=520)
+    cookies_field = _text_field(cfg.cookies, password=True, width=430)
 
     # Dynamic inputs that swap with crawler_type (search->keywords, detail->ids,
     # creator->creator_ids), mirroring crawler_manager per-type args.
@@ -833,6 +858,7 @@ async def main(page: ft.Page) -> None:
                     color=C.TAUPE_600,
                     font_family=BODY_STACK,
                     weight=ft.FontWeight.W_500,
+                    expand=True,
                 ),
             ],
             spacing=10,
@@ -843,8 +869,9 @@ async def main(page: ft.Page) -> None:
         border=ft.BorderSide(1, C.MOSS_200),
     )
 
-    # Primary Start / Stop buttons (brand button spec).
-    start_btn = ElevatedButton(
+    # Primary Start / Stop buttons. They are custom containers instead of
+    # disabled Flet buttons so inactive labels stay readable.
+    start_btn = ft.Container(
         content=Row(
             [
                 ft.Icon(Icons.PLAY_ARROW_ROUNDED, color=C.CREAM_50, size=18),
@@ -857,12 +884,16 @@ async def main(page: ft.Page) -> None:
                 ),
             ],
             spacing=8,
+            alignment=MainAxisAlignment.CENTER,
         ),
-        style=ft.ButtonStyle(bgcolor=C.MOSS_700, color=C.CREAM_50),
-        elevation=0,
+        bgcolor=C.MOSS_700,
+        border=ft.BorderSide(1.5, C.MOSS_700),
+        border_radius=R_SM,
+        padding=_pad_sym(horizontal=22, vertical=10),
+        ink=True,
         on_click=lambda e: asyncio.ensure_future(start_crawl()),
     )
-    stop_btn = OutlinedButton(
+    stop_btn = ft.Container(
         content=Row(
             [
                 ft.Icon(Icons.STOP_CIRCLE_OUTLINED, color=C.CARAMEL_500, size=18),
@@ -875,15 +906,29 @@ async def main(page: ft.Page) -> None:
                 ),
             ],
             spacing=8,
+            alignment=MainAxisAlignment.CENTER,
         ),
-        style=ft.ButtonStyle(
-            bgcolor=ft.Colors.TRANSPARENT,
-            side=ft.border.BorderSide(1.5, C.CREAM_400),
-            shape=ft.RoundedRectangleBorder(radius=R_SM),
-        ),
+        bgcolor=ft.Colors.TRANSPARENT,
+        border=ft.BorderSide(1.5, C.CREAM_400),
+        border_radius=R_SM,
+        padding=_pad_sym(horizontal=22, vertical=10),
+        ink=True,
         on_click=lambda e: asyncio.ensure_future(stop_crawl()),
-        disabled=True,
     )
+
+    def apply_button_visual_state(can_start: bool, can_stop: bool) -> None:
+        start_icon, start_text = start_btn.content.controls
+        stop_icon, stop_text = stop_btn.content.controls
+
+        start_icon.color = C.CREAM_50 if can_start else C.TAUPE_600
+        start_text.color = C.CREAM_50 if can_start else C.TAUPE_600
+        start_btn.bgcolor = C.MOSS_700 if can_start else C.CREAM_300
+        start_btn.border = ft.BorderSide(1.5, C.MOSS_700 if can_start else C.CREAM_400)
+
+        stop_icon.color = C.CREAM_50 if can_stop else C.TAUPE_500
+        stop_text.color = C.CREAM_50 if can_stop else C.TAUPE_500
+        stop_btn.bgcolor = C.CARAMEL_500 if can_stop else ft.Colors.TRANSPARENT
+        stop_btn.border = ft.BorderSide(1.5, C.CARAMEL_500 if can_stop else C.CREAM_400)
 
     # The control panel card.
     config_controls: list[Control] = [
@@ -912,36 +957,37 @@ async def main(page: ft.Page) -> None:
         ResponsiveRow(
             [
                 ft.Column(
-                    [_input_label("Platform", "平台"), platform_dd], col={"sm": 6, "md": 4}
+                    [_input_label("Platform", "平台"), platform_dd], col={"sm": 6, "md": 6}
                 ),
                 ft.Column(
-                    [_input_label("Login type", "登录方式"), login_dd], col={"sm": 6, "md": 4}
+                    [_input_label("Login type", "登录方式"), login_dd], col={"sm": 6, "md": 6}
                 ),
                 ft.Column(
                     [_input_label("Crawler type", "采集类型"), crawler_dd],
-                    col={"sm": 6, "md": 4},
+                    col={"sm": 6, "md": 6},
                 ),
                 ft.Column(
-                    [_input_label("Save option", "存储方式"), save_dd], col={"sm": 6, "md": 4}
+                    [_input_label("Save option", "存储方式"), save_dd], col={"sm": 6, "md": 6}
                 ),
                 ft.Column(
                     [_input_label("Notes per crawl", "笔记数量"), notes_field],
-                    col={"sm": 6, "md": 4},
+                    col={"sm": 6, "md": 6},
                 ),
             ],
-            spacing=16,
-            run_spacing=16,
+            spacing=12,
+            run_spacing=12,
         ),
         ft.Column([primary_arg_label, primary_arg_field], spacing=6),
         secondary_block,
+        Row([start_btn, stop_btn], spacing=12, alignment=MainAxisAlignment.START),
+        notice,
         ft.Column(
             [_input_label("Comments", "评论抓取"),
-             Row([comments_switch_ctl, sub_comments_switch_ctl], spacing=24)],
+             Row([comments_switch_ctl, sub_comments_switch_ctl], spacing=14, wrap=True)],
             spacing=8,
         ),
-        notice,
-        Row([start_btn, stop_btn], spacing=12, alignment=MainAxisAlignment.START),
         qr_image,
+        padding=18,
     )
 
     # =====================================================================
@@ -1012,7 +1058,7 @@ async def main(page: ft.Page) -> None:
             expand=True,
         ),
         bgcolor=C.CREAM_50,
-        padding=26,
+        padding=18,
         border=ft.BorderSide(1, C.CREAM_300),
         border_radius=R_MD,
         expand=True,
@@ -1147,7 +1193,7 @@ async def main(page: ft.Page) -> None:
             expand=True,
         ),
         bgcolor=C.CREAM_50,
-        padding=26,
+        padding=18,
         border=ft.BorderSide(1, C.CREAM_300),
         border_radius=R_MD,
         expand=True,
@@ -1163,10 +1209,10 @@ async def main(page: ft.Page) -> None:
         assert proc.stdout is not None
         try:
             while proc.poll() is None:
-                line = await loop.run_in_executor(None, proc.stdout.readline)
-                if not line:
+                raw_line = await loop.run_in_executor(None, proc.stdout.readline)
+                if not raw_line:
                     break  # EOF
-                line = line.strip()
+                line = decode_process_output(raw_line).strip()
                 if not line:
                     continue
                 _append_log_line(parse_log_level(line), line)
@@ -1180,7 +1226,7 @@ async def main(page: ft.Page) -> None:
             # Drain any remaining buffered output.
             remaining = await loop.run_in_executor(None, proc.stdout.read)
             if remaining:
-                for raw in remaining.splitlines():
+                for raw in decode_process_output(remaining).splitlines():
                     s = raw.strip()
                     if s:
                         _append_log_line(parse_log_level(s), s)
@@ -1190,18 +1236,16 @@ async def main(page: ft.Page) -> None:
             _flog("reader EXCEPTION: " + str(exc))
             _append_log_line("error", f"Log reader error: {exc}")
         finally:
-            rc = proc.returncode
+            try:
+                rc = await loop.run_in_executor(None, proc.wait)
+            except Exception as exc:  # pragma: no cover - defensive
+                _flog("proc.wait EXCEPTION: " + str(exc))
+                rc = proc.returncode
             _flog("reader done rc=%s final_status=%s" % (rc, state.status))
             print(">>> CRAWL DONE  rc=%s  (results in data/%s/)" % (rc, cfg.platform), flush=True)
-            if rc == 0:
-                _append_log_line("success", "Crawler completed successfully · 采集完成")
-                set_status("idle")
-            elif rc is None or state.status == "stopping":
-                _append_log_line("info", "Crawler stopped · 已停止")
-                set_status("idle")
-            else:
-                _append_log_line("error", f"Crawler exited with code {rc}")
-                set_status("error")
+            next_status, level, message = classify_crawl_completion(rc, state.status)
+            _append_log_line(level, message)
+            set_status(next_status)
             safe_update("read:finally")
             # Auto-refresh the data panel when a crawl finishes.
             refresh_data()
@@ -1276,9 +1320,7 @@ async def main(page: ft.Page) -> None:
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                bufsize=1,
+                bufsize=0,
                 cwd=str(REPO_ROOT),
                 env=child_env,
                 start_new_session=True,  # 独立进程组：stop 时 killpg 能连 Chrome 一起杀
@@ -1410,20 +1452,23 @@ async def main(page: ft.Page) -> None:
     # ASSEMBLE PAGE
     # =====================================================================
     body = ft.Container(
-        content=ft.Column(
+        content=ft.Row(
             [
-                control_panel,
-                ft.Row(
-                    [log_panel, data_panel],
+                ft.Container(content=control_panel, width=500),
+                ft.Column(
+                    [
+                        ft.Container(content=data_panel, height=178),
+                        log_panel,
+                    ],
                     spacing=16,
                     expand=True,
-                    vertical_alignment=ft.CrossAxisAlignment.STRETCH,
                 ),
             ],
             spacing=16,
             expand=True,
+            vertical_alignment=ft.CrossAxisAlignment.STRETCH,
         ),
-        padding=_pad_all(24),
+        padding=_pad_all(20),
         expand=True,
     )
 
