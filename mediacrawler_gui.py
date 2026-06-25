@@ -1363,10 +1363,7 @@ async def main(page: ft.Page) -> None:
     body = ft.Container(
         content=ft.Column(
             [
-                ft.Row(
-                    [control_panel],
-                    spacing=0,
-                ),
+                control_panel,
                 ft.Row(
                     [log_panel, data_panel],
                     spacing=16,
