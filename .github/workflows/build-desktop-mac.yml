@@ -80,6 +80,9 @@ jobs:
           PYROOT="$(cd "$(dirname "$PYBIN")/.." && pwd)"
           mkdir -p payload
           cp -a "$PYROOT/." payload/python
+          # python-build-standalone ships a PEP 668 EXTERNALLY-MANAGED marker that
+          # blocks pip into this interpreter; remove it so deps install cleanly.
+          find payload/python -name EXTERNALLY-MANAGED -delete
           payload/python/bin/python3 -m ensurepip --upgrade || true
           payload/python/bin/python3 -m pip install --upgrade pip
           payload/python/bin/python3 --version
