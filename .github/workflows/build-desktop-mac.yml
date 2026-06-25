@@ -116,35 +116,33 @@ jobs:
       - name: Sync dev env (provides flet for `flet pack`)
         run: uv sync
 
-      - name: Freeze GUI with flet pack (--onedir)
+      - name: Freeze GUI with flet pack
         run: |
           set -euo pipefail
-          uv run flet pack mediacrawler_gui.py \
-            --onedir \
-            --name MediaCrawler \
-            --noconsole \
-            --collect-all flet --collect-all flet_core \
-            --hidden-import flet --hidden-import flet_core --hidden-import flet.runtime
-          test -d dist/MediaCrawler
+          # flet pack bundles flet + the flet desktop runtime automatically; on
+          # macOS it produces dist/MediaCrawler.app (a folder bundle). It is NOT
+          # PyInstaller — flags like --noconsole/--collect-all are rejected in
+          # 0.85.x (use --pyinstaller-build-args to pass raw PyInstaller flags).
+          uv run flet pack mediacrawler_gui.py --name MediaCrawler
+          test -d dist/MediaCrawler.app
 
       # ------------------------------------------------------------------
-      # 4. Place the payload beside the frozen exe and zip the folder.
+      # 4. Place the payload inside the .app (at Contents/MacOS/, where the
+      #    frozen exe lives — the GUI resolves payload from sys.executable.parent).
       # ------------------------------------------------------------------
-      - name: Place payload beside frozen GUI
+      - name: Place payload into the .app bundle
         run: |
           set -euo pipefail
-          mv payload dist/MediaCrawler/payload
+          mv payload dist/MediaCrawler.app/Contents/MacOS/payload
           # Sanity: the GUI's frozen-mode paths must exist.
-          test -f dist/MediaCrawler/payload/python/bin/python3
-          test -f dist/MediaCrawler/payload/crawler/main.py
-          test -d dist/MediaCrawler/payload/ms-playwright
+          test -f dist/MediaCrawler.app/Contents/MacOS/payload/python/bin/python3
+          test -f dist/MediaCrawler.app/Contents/MacOS/payload/crawler/main.py
+          test -d dist/MediaCrawler.app/Contents/MacOS/payload/ms-playwright
 
-      - name: Zip the app folder
+      - name: Zip the .app
         run: |
           set -euo pipefail
-          cd dist
-          ditto -c -k --keepParent MediaCrawler "../MediaCrawler-mac-arm64.zip"
-          cd ..
+          ditto -c -k --keepParent dist/MediaCrawler.app MediaCrawler-mac-arm64.zip
           ls -lh MediaCrawler-mac-arm64.zip
 
       - name: Upload artifact
