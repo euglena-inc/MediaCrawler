@@ -6,7 +6,7 @@ asyncmy>=0.2.10
 asyncpg>=0.31.0
 cryptography>=45.0.7
 fastapi==0.110.2
-flet>=0.27.0
+flet==0.85.3
 httpx==0.28.1
 jieba==0.42.1
 matplotlib==3.9.0
