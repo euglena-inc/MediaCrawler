@@ -155,6 +155,7 @@ def show_qrcode(qr_code) -> None:  # type: ignore
     try:
         os.makedirs("data", exist_ok=True)
         image.save("data/login_qrcode.png")
+        print(f"[QR] saved login QR PNG -> {os.path.abspath('data/login_qrcode.png')}", flush=True)
     except Exception as e:  # noqa
         print(f"[QR] save qrcode png failed: {e}", flush=True)
 
