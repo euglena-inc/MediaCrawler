@@ -119,10 +119,11 @@ jobs:
       - name: Freeze GUI with flet pack
         run: |
           set -euo pipefail
-          # flet pack bundles flet + the flet desktop runtime automatically; on
-          # macOS it produces dist/MediaCrawler.app (a folder bundle). It is NOT
-          # PyInstaller — flags like --noconsole/--collect-all are rejected in
-          # 0.85.x (use --pyinstaller-build-args to pass raw PyInstaller flags).
+          # flet pack is a PyInstaller wrapper — PyInstaller must be installed
+          # in this env. flet pack bundles flet + the desktop runtime itself; on
+          # macOS it produces dist/MediaCrawler.app. It is NOT PyInstaller, so
+          # --noconsole/--collect-all are rejected (use --pyinstaller-build-args).
+          uv pip install pyinstaller
           uv run flet pack mediacrawler_gui.py --name MediaCrawler
           test -d dist/MediaCrawler.app
 
