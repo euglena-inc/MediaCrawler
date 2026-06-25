@@ -1,0 +1,160 @@
+name: Build Desktop App (macOS arm64)
+
+# Builds the offline MediaCrawler desktop app for Apple Silicon.
+#
+# Layout (a folder, NOT a single exe):
+#   dist/MediaCrawler/
+#   ├── MediaCrawler                # frozen GUI launcher (flet pack --onedir)
+#   ├── _internal/                  # PyInstaller GUI deps (flet only)
+#   └── payload/
+#       ├── crawler/                # full repo tree (main.py + media_platform/ …),
+#       │                           #   minus .git/.venv/node_modules/dist/pyc/.env
+#       ├── python/                 # portable CPython 3.11 (python-build-standalone,
+#       │  bin/python3              #   RELOCATABLE) with ALL crawler deps pip-installed
+#       │                           #   into its OWN site-packages — NOT a venv, no uv
+#       │                           #   needed at runtime.
+#       └── ms-playwright/          # pre-installed Chromium for playwright==1.45.0
+#
+# mediacrawler_gui.py detects the frozen build (sys.frozen) and points its
+# subprocess seam at payload/{python,crawler,ms-playwright}; in dev it's unchanged.
+# The whole app is self-contained: no system Python, no uv, no venv, no internet.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - mediacrawler_gui.py
+      - .github/workflows/build-desktop-mac.yml
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # softprops/action-gh-release attaches assets on tag pushes
+
+concurrency:
+  group: build-desktop-mac-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build macOS arm64 desktop app
+    runs-on: macos-14
+
+    env:
+      # Land Chromium directly where the payload expects it; keep it out of the
+      # system cache so the bundle is fully self-contained.
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/payload/ms-playwright
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11 (for flet pack tooling)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Cache playwright Chromium
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/payload/ms-playwright
+            ~/Library/Caches/ms-playwright
+          key: pw-chromium-mac-arm64-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            pw-chromium-mac-arm64-
+
+      # ------------------------------------------------------------------
+      # 1. Portable Python (python-build-standalone, relocatable) + deps.
+      #    NOT a venv: deps are pip-installed into the interpreter's own
+      #    site-packages, so the tree is self-contained and movable.
+      # ------------------------------------------------------------------
+      - name: Fetch portable CPython 3.11 (python-build-standalone)
+        run: |
+          set -euo pipefail
+          uv python install 3.11
+          PYBIN="$(uv python find 3.11)"
+          PYROOT="$(cd "$(dirname "$PYBIN")/.." && pwd)"
+          mkdir -p payload
+          cp -a "$PYROOT/." payload/python
+          payload/python/bin/python3 -m ensurepip --upgrade || true
+          payload/python/bin/python3 -m pip install --upgrade pip
+          payload/python/bin/python3 --version
+
+      - name: pip-install crawler deps into the portable Python
+        run: |
+          set -euo pipefail
+          payload/python/bin/python3 -m pip install -r requirements.txt
+          payload/python/bin/python3 -c "import playwright, jieba, parsel; print('crawler deps OK')"
+
+      - name: Pre-install Chromium into payload/ms-playwright
+        run: payload/python/bin/python3 -m playwright install chromium
+
+      # ------------------------------------------------------------------
+      # 2. Crawler source files (the child runs main.py from here).
+      # ------------------------------------------------------------------
+      - name: Assemble payload/crawler (repo files)
+        run: |
+          set -euo pipefail
+          mkdir -p payload/crawler
+          rsync -a \
+            --exclude='.git/' --exclude='.venv/' --exclude='node_modules/' \
+            --exclude='dist/' --exclude='__pycache__/' --exclude='*.pyc' \
+            --exclude='.env' --exclude='payload/' --exclude='.github/' \
+            ./ payload/crawler/
+
+      # ------------------------------------------------------------------
+      # 3. Freeze the GUI (flet pack --onedir). The GUI imports only flet;
+      #    the crawler is NOT frozen (it runs in the portable Python child).
+      # ------------------------------------------------------------------
+      - name: Sync dev env (provides flet for `flet pack`)
+        run: uv sync
+
+      - name: Freeze GUI with flet pack (--onedir)
+        run: |
+          set -euo pipefail
+          uv run flet pack mediacrawler_gui.py \
+            --onedir \
+            --name MediaCrawler \
+            --noconsole \
+            --collect-all flet --collect-all flet_core \
+            --hidden-import flet --hidden-import flet_core --hidden-import flet.runtime
+          test -d dist/MediaCrawler
+
+      # ------------------------------------------------------------------
+      # 4. Place the payload beside the frozen exe and zip the folder.
+      # ------------------------------------------------------------------
+      - name: Place payload beside frozen GUI
+        run: |
+          set -euo pipefail
+          mv payload dist/MediaCrawler/payload
+          # Sanity: the GUI's frozen-mode paths must exist.
+          test -f dist/MediaCrawler/payload/python/bin/python3
+          test -f dist/MediaCrawler/payload/crawler/main.py
+          test -d dist/MediaCrawler/payload/ms-playwright
+
+      - name: Zip the app folder
+        run: |
+          set -euo pipefail
+          cd dist
+          ditto -c -k --keepParent MediaCrawler "../MediaCrawler-mac-arm64.zip"
+          cd ..
+          ls -lh MediaCrawler-mac-arm64.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MediaCrawler-mac-arm64
+          path: MediaCrawler-mac-arm64.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach to release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: MediaCrawler-mac-arm64.zip
+          generate_release_notes: true

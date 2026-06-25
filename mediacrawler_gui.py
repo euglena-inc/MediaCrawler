@@ -197,9 +197,10 @@ if FROZEN:
     # Beside the onedir exe: <APP_DIR>/MediaCrawler -> APP_DIR = exe's parent.
     APP_DIR = Path(sys.executable).resolve().parent
     REPO_ROOT = APP_DIR / "payload" / "crawler"
-    CHILD_PY = APP_DIR / "payload" / "venv" / "bin" / "python"
+    CHILD_PY = APP_DIR / "payload" / "python" / "bin" / "python3"
     PW_BROWSERS = APP_DIR / "payload" / "ms-playwright"
-    # Run main.py directly with the bundled venv's python (uv is not shipped).
+    # Run main.py with the bundled portable Python (deps in its own site-packages;
+    # NOT a venv — no uv, no system Python needed at runtime).
     BASE_CMD = [str(CHILD_PY), "main.py"]
 else:
     # Dev mode — byte-for-byte equivalent to the original behavior.
