@@ -177,17 +177,38 @@ def _pad_all(n: float):
 # CRAWLER DRIVER — subprocess contract (mirrors crawler_manager.py).
 #   cwd = the MediaCrawler repo root (where main.py lives). We resolve it
 #   relative to this file so the GUI keeps working whether launched from the
-#   repo root or packaged with `flet pack`.
+#   repo root or packaged with `flet pack` (frozen onedir exe).
+#
+#   FROZEN layout (beside the onedir exe at <APP_DIR>/MediaCrawler, where
+#   <APP_DIR> = dist/MediaCrawler/):
+#     <APP_DIR>/payload/crawler/      full MediaCrawler repo (main.py, etc.)
+#     <APP_DIR>/payload/venv/         relocatable uv-created Python 3.11 venv
+#     <APP_DIR>/payload/ms-playwright/  Playwright Chromium browser dir
+#   In dev (NOT frozen) the repo itself is the cwd and the crawler is launched
+#   via `uv run python main.py` exactly as before — behavior unchanged.
 # =============================================================================
 
-# This file lives at <repo_root>/mediacrawler_gui.py. main.py is its sibling.
-REPO_ROOT = Path(__file__).resolve().parent
+# Detect a PyInstaller/flet-pack frozen build. When frozen, sys.executable is
+# the onedir exe and the payload sits beside it; when not, this file lives at
+# <repo_root>/mediacrawler_gui.py and main.py is its sibling.
+FROZEN = bool(getattr(sys, "frozen", False))
+
+if FROZEN:
+    # Beside the onedir exe: <APP_DIR>/MediaCrawler -> APP_DIR = exe's parent.
+    APP_DIR = Path(sys.executable).resolve().parent
+    REPO_ROOT = APP_DIR / "payload" / "crawler"
+    CHILD_PY = APP_DIR / "payload" / "venv" / "bin" / "python"
+    PW_BROWSERS = APP_DIR / "payload" / "ms-playwright"
+    # Run main.py directly with the bundled venv's python (uv is not shipped).
+    BASE_CMD = [str(CHILD_PY), "main.py"]
+else:
+    # Dev mode — byte-for-byte equivalent to the original behavior.
+    REPO_ROOT = Path(__file__).resolve().parent
+    BASE_CMD = ["uv", "run", "python", "main.py"]
+    PW_BROWSERS = None  # no PLAYWRIGHT_BROWSERS_PATH injection in dev.
+
 MAIN_PY = REPO_ROOT / "main.py"
 DATA_DIR = REPO_ROOT / "data"
-
-# Canonical headed xhs search+qrcode launch, built the same way as
-# crawler_manager._build_command so behavior is identical to the FastAPI WebUI.
-BASE_CMD = ["uv", "run", "python", "main.py"]
 
 MAX_LOG_LINES = 4000  # cap the in-memory log ring buffer to bound memory.
 
@@ -457,7 +478,7 @@ def _section_card(*controls: Control, padding: int = 26, bgcolor: str = C.CREAM_
         content=ft.Column(controls, spacing=14) if len(controls) > 1 else controls[0],
         bgcolor=bgcolor,
         padding=padding,
-        border=ft.border.all(1, C.CREAM_300),
+        border=ft.BorderSide(1, C.CREAM_300),
         border_radius=R_MD,
     )
 
@@ -487,7 +508,7 @@ def _dropdown(options, value, on_change=None, width: Optional[float] = None) -> 
     return Dropdown(
         options=[ft.dropdown.Option(k, text=t) for k, t in options],
         value=value,
-        on_change=on_change,
+        on_select=on_change,
         bgcolor=C.CREAM_50,
         filled=True,
         text_size=14,
@@ -505,7 +526,7 @@ def _dropdown_str(options, value, on_change=None, width: Optional[float] = None)
     return Dropdown(
         options=[ft.dropdown.Option(o) for o in options],
         value=value,
-        on_change=on_change,
+        on_select=on_change,
         bgcolor=C.CREAM_50,
         filled=True,
         text_size=14,
@@ -680,7 +701,7 @@ async def main(page: ft.Page) -> None:
         ),
         bgcolor=C.CREAM_50,
         padding=_pad_sym(horizontal=28, vertical=18),
-        border=ft.border.only(bottom=ft.border.BorderSide(1, C.CREAM_300)),
+        border=ft.Border(bottom=ft.BorderSide(1, C.CREAM_300)),
     )
 
     # =====================================================================
@@ -776,10 +797,10 @@ async def main(page: ft.Page) -> None:
         cfg.sub_comments = sub_comments_switch_ctl.controls[0].value
 
     # Wire handlers
-    platform_dd.on_change = on_platform
-    login_dd.on_change = on_login
-    crawler_dd.on_change = on_crawler
-    save_dd.on_change = on_save
+    platform_dd.on_select = on_platform
+    login_dd.on_select = on_login
+    crawler_dd.on_select = on_crawler
+    save_dd.on_select = on_save
     keywords_field.on_change = on_keywords
     notes_field.on_change = on_notes
     cookies_field.on_change = on_cookies
@@ -804,7 +825,7 @@ async def main(page: ft.Page) -> None:
         bgcolor=C.MOSS_200,
         padding=_pad_sym(horizontal=14, vertical=10),
         border_radius=R_SM,
-        border=ft.border.all(1, C.MOSS_200),
+        border=ft.BorderSide(1, C.MOSS_200),
     )
 
     # Primary Start / Stop buttons (brand button spec).
@@ -934,7 +955,7 @@ async def main(page: ft.Page) -> None:
         )
 
     clear_btn = IconButton(
-        icon=Icons.DELETE_SWEEP_OUTLINE,
+        icon=Icons.DELETE_SWEEP_OUTLINED,
         icon_color=C.TAUPE_500,
         tooltip="Clear log  /  清空日志",
         on_click=lambda e: clear_log(),
@@ -962,7 +983,7 @@ async def main(page: ft.Page) -> None:
                     content=log_view,
                     bgcolor=C.COFFEE_900,  # dark inverse surface for logs
                     border_radius=R_MD,
-                    border=ft.border.all(1, C.COFFEE_800),
+                    border=ft.BorderSide(1, C.COFFEE_800),
                     padding=0,
                     expand=True,
                 ),
@@ -972,7 +993,7 @@ async def main(page: ft.Page) -> None:
         ),
         bgcolor=C.CREAM_50,
         padding=26,
-        border=ft.border.all(1, C.CREAM_300),
+        border=ft.BorderSide(1, C.CREAM_300),
         border_radius=R_MD,
         expand=True,
     )
@@ -1049,7 +1070,7 @@ async def main(page: ft.Page) -> None:
             ),
             bgcolor=C.CREAM_50,
             padding=_pad_sym(horizontal=14, vertical=10),
-            border=ft.border.all(1, C.CREAM_300),
+            border=ft.BorderSide(1, C.CREAM_300),
             border_radius=R_SM,
         )
 
@@ -1107,7 +1128,7 @@ async def main(page: ft.Page) -> None:
         ),
         bgcolor=C.CREAM_50,
         padding=26,
-        border=ft.border.all(1, C.CREAM_300),
+        border=ft.BorderSide(1, C.CREAM_300),
         border_radius=R_MD,
         expand=True,
     )
@@ -1211,6 +1232,13 @@ async def main(page: ft.Page) -> None:
         except Exception:
             pass
 
+        # Child env: always unbuffered. When frozen, point Playwright at the
+        # bundled browser dir so the crawler finds Chromium-1118. In dev the
+        # environment is untouched (PLAYWRIGHT_BROWSERS_PATH not injected).
+        child_env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+        if FROZEN and PW_BROWSERS is not None:
+            child_env["PLAYWRIGHT_BROWSERS_PATH"] = str(PW_BROWSERS)
+
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -1220,7 +1248,7 @@ async def main(page: ft.Page) -> None:
                 encoding="utf-8",
                 bufsize=1,
                 cwd=str(REPO_ROOT),
-                env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                env=child_env,
             )
         except FileNotFoundError as exc:
             _append_log_line(

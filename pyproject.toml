@@ -46,7 +46,7 @@ dependencies = [
     # over main.py. It never imports the crawler package, so it adds zero
     # coupling. Install/runtime only; not required by main.py, the FastAPI api/,
     # the Dockerfile or the GitHub Action.
-    "flet>=0.27.0",
+    "flet==0.85.3",
 ]
 
 [[tool.uv.index]]
