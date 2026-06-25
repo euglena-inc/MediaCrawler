@@ -1245,6 +1245,16 @@ async def main(page: ft.Page) -> None:
         if FROZEN and PW_BROWSERS is not None:
             child_env["PLAYWRIGHT_BROWSERS_PATH"] = str(PW_BROWSERS)
 
+        # 清掉可能残留的、占用 browser_data profile 锁的 Chromium（上次崩溃/强杀残留），
+        # 否则下次 launch_persistent_context 会 "正在现有的浏览器会话中打开" -> TargetClosedError。
+        try:
+            subprocess.run(
+                ["pkill", "-9", "-f", "browser_data/xhs_user_data_dir"],
+                check=False, capture_output=True,
+            )
+        except Exception:
+            pass
+
         try:
             proc = subprocess.Popen(
                 cmd,
@@ -1255,6 +1265,7 @@ async def main(page: ft.Page) -> None:
                 bufsize=1,
                 cwd=str(REPO_ROOT),
                 env=child_env,
+                start_new_session=True,  # 独立进程组：stop 时 killpg 能连 Chrome 一起杀
             )
         except FileNotFoundError as exc:
             _append_log_line(
@@ -1290,7 +1301,13 @@ async def main(page: ft.Page) -> None:
         except Exception:
             pass
         try:
-            proc.send_signal(signal.SIGTERM)
+            # 杀整个进程组（含 Playwright 起的 Chrome 子进程），避免 Chrome 成为孤儿、
+            # 占着 browser_data profile 锁导致下次 Start 报 TargetClosedError。
+            try:
+                _pgid = os.getpgid(proc.pid)
+                os.killpg(_pgid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                proc.send_signal(signal.SIGTERM)
             # Wait up to ~15s for graceful exit (same cadence as stop()).
             for _ in range(30):
                 if proc.poll() is not None:
@@ -1299,9 +1316,12 @@ async def main(page: ft.Page) -> None:
             if proc.poll() is None:
                 _append_log_line("warning", "Process not responding, sending SIGKILL  ·  强制结束")
                 try:
-                    proc.kill()
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
                 except Exception:
-                    pass
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
         except Exception as exc:  # pragma: no cover - defensive
             _append_log_line("error", f"Error stopping crawler: {exc}")
         finally:
