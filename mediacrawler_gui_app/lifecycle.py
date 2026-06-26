@@ -184,7 +184,8 @@ class CrawlerLifecycle:
             if self.state.reader_task and not self.state.reader_task.done():
                 self.state.reader_task.cancel()
             self.state.proc = None
-            self.set_status("idle")
+            if self.state.reader_task is None or self.state.reader_task.done():
+                self.set_status("idle")
 
     async def _terminate_process_group(self, proc: subprocess.Popen) -> None:
         try:

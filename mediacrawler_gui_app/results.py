@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Optional
 
@@ -21,11 +20,14 @@ def scan_data_files(platform: str) -> list[dict]:
         data_dir = base / ftype
         if not data_dir.exists():
             continue
-        for path in sorted(data_dir.glob(f"*.{ftype}"), key=os.path.getmtime, reverse=True):
+        for path in data_dir.glob(f"*.{ftype}"):
             try:
-                size = path.stat().st_size
+                stat = path.stat()
+                size = stat.st_size
+                mtime = stat.st_mtime
             except OSError:
                 size = 0
+                mtime = 0.0
             records = count_records(path, ftype) if ftype in ("jsonl", "json") else None
             out.append(
                 {
@@ -33,10 +35,11 @@ def scan_data_files(platform: str) -> list[dict]:
                     "type": ftype,
                     "size": size,
                     "records": records,
-                    "mtime": path.stat().st_mtime if path.exists() else 0.0,
+                    "mtime": mtime,
                     "path": str(path),
                 }
             )
+    out.sort(key=lambda item: item["mtime"], reverse=True)
     return out
 
 
